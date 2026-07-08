@@ -104,33 +104,60 @@
             -webkit-text-fill-color: transparent;
         }
 
-        /* Scoreboard design */
-        .score-board {
-            background: rgba(255, 255, 255, 0.07);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            padding: 12px 28px;
-            border-radius: 24px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        /* Stats container and box design */
+        .stats-container {
             display: flex;
-            align-items: center;
             gap: 15px;
         }
 
-        .score-label {
+        .stat-box {
+            background: rgba(255, 255, 255, 0.07);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 10px 22px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stat-label {
             font-weight: 600;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             text-transform: uppercase;
             letter-spacing: 1px;
             color: rgba(255, 255, 255, 0.6);
         }
 
-        .score-val {
+        .stat-val {
             font-weight: 900;
-            font-size: 2rem;
+            font-size: 1.8rem;
             color: var(--accent);
             text-shadow: 0 0 15px rgba(255, 170, 0, 0.5);
             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Level Up Banner Overlay */
+        .level-up-banner {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.5);
+            font-size: 3.5rem;
+            font-weight: 900;
+            color: var(--accent);
+            text-shadow: 0 0 30px rgba(255, 170, 0, 0.8), 0 0 10px rgba(255, 255, 255, 0.8);
+            opacity: 0;
+            pointer-events: none;
+            z-index: 5;
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            letter-spacing: 3px;
+        }
+
+        .level-up-active {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1.2);
         }
 
         /* Question Center Panel */
@@ -358,15 +385,26 @@
             .logo-text {
                 font-size: 0.9rem;
             }
-            .score-board {
-                padding: 8px 18px;
+            .stats-container {
+                gap: 8px;
             }
-            .score-val {
-                font-size: 1.5rem;
+            .stat-box {
+                padding: 8px 14px;
+                border-radius: 14px;
+                gap: 8px;
+            }
+            .stat-val {
+                font-size: 1.3rem;
+            }
+            .stat-label {
+                font-size: 0.75rem;
             }
             .instruction-box {
                 font-size: 0.8rem;
                 padding: 10px 20px;
+            }
+            .level-up-banner {
+                font-size: 2.5rem;
             }
         }
     </style>
@@ -385,6 +423,9 @@
     <!-- Container Utama untuk Grafik Three.js -->
     <div id="canvas-container"></div>
 
+    <!-- Banner Naik Tahap -->
+    <div id="level-up-banner" class="level-up-banner">TAHAP BARU!</div>
+
     <!-- Antaramuka Pengguna (UI) di atas WebGL Canvas -->
     <div class="ui-layer">
         <header>
@@ -392,9 +433,15 @@
                 <div class="logo-dot"></div>
                 <div class="logo-text">MATEMATIK TAHUN 1</div>
             </div>
-            <div class="score-board interactive-ui">
-                <span class="score-label">Skor</span>
-                <span id="score-val" class="score-val">0</span>
+            <div class="stats-container interactive-ui">
+                <div class="stat-box">
+                    <span class="stat-label">Tahap</span>
+                    <span id="level-val" class="stat-val">1</span>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-label">Skor</span>
+                    <span id="score-val" class="stat-val">0</span>
+                </div>
             </div>
         </header>
 
@@ -421,6 +468,7 @@
         let scene, camera, renderer;
         let cubes = [];
         let particles;
+        let bottomLight; // Jadikan global untuk perubahan tema tahap
         const cubeBaseX = [-3.2, 0, 3.2];
         const cubeColors = ['#00f0ff', '#ff007f', '#ffaa00']; // Cyan, Pink, Orange
         const cubeTextColors = ['#0c071e', '#0c071e', '#0c071e'];
@@ -429,8 +477,18 @@
         let currentQuestion = { a: 0, b: 0, op: '+', answer: 0 };
         let choices = [0, 0, 0];
         let score = 0;
+        let level = 1; // Tahap permainan semasa
         let canClick = false;
         let isMuted = false;
+
+        // Tema warna mengikut Tahap
+        const levelThemes = [
+            { particleColor: 0x818cf8, bottomLight: 0x7c3aed }, // Level 1 (Indigo/Blue)
+            { particleColor: 0xec4899, bottomLight: 0xdb2777 }, // Level 2 (Pink/Magenta)
+            { particleColor: 0x10b981, bottomLight: 0x059669 }, // Level 3 (Emerald Green)
+            { particleColor: 0xf59e0b, bottomLight: 0xd97706 }, // Level 4 (Amber/Orange)
+            { particleColor: 0xef4444, bottomLight: 0xdc2626 }  // Level 5+ (Crimson/Red)
+        ];
         
         // Raycasting
         const raycaster = new THREE.Raycaster();
@@ -609,7 +667,7 @@
             scene.add(dirLight);
 
             // Pencahayaan Berwarna dari Bawah untuk visual dramatik
-            const bottomLight = new THREE.PointLight(0x7c3aed, 2, 15);
+            bottomLight = new THREE.PointLight(0x7c3aed, 2, 15);
             bottomLight.position.set(0, -6, 2);
             scene.add(bottomLight);
 
@@ -719,14 +777,22 @@
             const operation = Math.random() < 0.5 ? '+' : '-';
             let a, b, answer;
 
+            // Tentukan had lingkungan nombor berdasarkan Tahap
+            let maxVal = 10; // Tahap 2 (default)
+            if (level === 1) {
+                maxVal = 5;
+            } else if (level === 3) {
+                maxVal = 15;
+            } else if (level >= 4) {
+                maxVal = 20;
+            }
+
             if (operation === '+') {
-                // Hasil tambah maks ialah 10
-                answer = Math.floor(Math.random() * 11); // 0 hingga 10
+                answer = Math.floor(Math.random() * (maxVal + 1));
                 a = Math.floor(Math.random() * (answer + 1));
                 b = answer - a;
             } else {
-                // Operasi Tolak: a >= b untuk mengelak hasil negatif
-                a = Math.floor(Math.random() * 11); // 0 hingga 10
+                a = Math.floor(Math.random() * (maxVal + 1));
                 b = Math.floor(Math.random() * (a + 1));
                 answer = a - b;
             }
@@ -741,8 +807,8 @@
             questionText.style.animation = 'float-slow 4s ease-in-out infinite';
 
             // Jana pilihan jawapan (1 betul, 2 salah)
-            const wrong1 = generateUniqueWrongAnswer(answer);
-            const wrong2 = generateUniqueWrongAnswer(answer, wrong1);
+            const wrong1 = generateUniqueWrongAnswer(answer, maxVal);
+            const wrong2 = generateUniqueWrongAnswer(answer, wrong1, maxVal);
 
             choices = [answer, wrong1, wrong2];
             
@@ -754,6 +820,11 @@
                 cube.userData.value = choices[i];
                 cube.userData.targetScale = 1.0; // reset skala
                 
+                // Laraskan kelajuan putaran kubus mengikut tahap
+                const rotationFactor = 1 + (level - 1) * 0.15; // +15% kelajuan setiap tahap
+                cube.userData.rotationSpeedX = (0.008 + (i * 0.002)) * rotationFactor;
+                cube.userData.rotationSpeedY = (0.012 - (i * 0.001)) * rotationFactor;
+
                 // Nyahaktifkan tekstur lama untuk cegah kebocoran memori
                 if (cube.material.map) {
                     cube.material.map.dispose();
@@ -766,11 +837,13 @@
             canClick = true;
         }
 
-        function generateUniqueWrongAnswer(correct, existingWrong = -1) {
+        function generateUniqueWrongAnswer(correct, existingWrong = -1, maxVal = 10) {
             let val;
+            let attempts = 0;
             do {
-                val = Math.floor(Math.random() * 11); // 0 hingga 10
-            } while (val === correct || val === existingWrong);
+                val = Math.floor(Math.random() * (maxVal + 1));
+                attempts++;
+            } while ((val === correct || val === existingWrong) && attempts < 100);
             return val;
         }
 
@@ -837,6 +910,7 @@
                 playCorrectSound();
                 score += 10;
                 updateScoreDisplay();
+                checkLevelUp();
 
                 // Animasi kubus betul membesar & berpusing laju
                 selectedCube.userData.targetScale = 2.0;
@@ -878,6 +952,74 @@
             setTimeout(() => {
                 scoreVal.style.transform = 'scale(1)';
             }, 200);
+        }
+
+        function checkLevelUp() {
+            const targetLevel = Math.min(5, Math.floor(score / 50) + 1);
+            if (targetLevel > level) {
+                level = targetLevel;
+                playLevelUpSound();
+                triggerLevelUpVisuals();
+            }
+        }
+
+        function playLevelUpSound() {
+            if (!audioCtx) return;
+            const now = audioCtx.currentTime;
+            // Arpeggio C5 -> E5 -> G5 -> C6
+            const freqs = [523.25, 659.25, 783.99, 1046.50];
+            freqs.forEach((freq, idx) => {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(freq, now + idx * 0.1);
+                gain.gain.setValueAtTime(0.15, now + idx * 0.1);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.1 + 0.45);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start(now + idx * 0.1);
+                osc.stop(now + idx * 0.1 + 0.55);
+            });
+        }
+
+        function triggerLevelUpVisuals() {
+            // Kemas kini paparan tahap
+            document.getElementById('level-val').innerText = level;
+            
+            const lvlVal = document.getElementById('level-val');
+            lvlVal.style.transform = 'scale(1.6)';
+            setTimeout(() => {
+                lvlVal.style.transform = 'scale(1)';
+            }, 300);
+
+            // Papar Banner Naik Tahap
+            const banner = document.getElementById('level-up-banner');
+            banner.innerText = `TAHAP ${level}!`;
+            banner.classList.add('level-up-active');
+            setTimeout(() => {
+                banner.classList.remove('level-up-active');
+            }, 1600);
+
+            // Kemas kini warna tema
+            const themeIdx = Math.min(level - 1, levelThemes.length - 1);
+            const theme = levelThemes[themeIdx];
+            if (particles) {
+                particles.material.color.setHex(theme.particleColor);
+            }
+            if (bottomLight) {
+                bottomLight.color.setHex(theme.bottomLight);
+            }
+
+            // Putar kubus dengan kelajuan gila seketika
+            cubes.forEach(cube => {
+                cube.userData.rotationSpeedX *= 4;
+                cube.userData.rotationSpeedY *= 4;
+                setTimeout(() => {
+                    const rotationFactor = 1 + (level - 1) * 0.15;
+                    cube.userData.rotationSpeedX = (0.008 + (cube.userData.index * 0.002)) * rotationFactor;
+                    cube.userData.rotationSpeedY = (0.012 - (cube.userData.index * 0.001)) * rotationFactor;
+                }, 1200);
+            });
         }
 
         function showFeedback(isCorrect) {
